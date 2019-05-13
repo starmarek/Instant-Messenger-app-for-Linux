@@ -1,18 +1,19 @@
-#include <iostream>     //std::cout | std::cerr
-#include <sys/types.h>  //int socket() | int accept() | int listen() | ssize_t recv() | ssize_t send()
-#include <sys/socket.h> //int socket() | int getnameinfo() | int accept() | int listen() |  ssize_t recv() | ssize_t send()
-#include <netdb.h>      //int getnameinfo()
-#include <string.h>     //void *memset()
-#include <arpa/inet.h>  //uni16_t htons() | uni32_t htonl()
-#include <unistd.h>     //close()
+#include <iostream>     //std::cout | std::cerr | std::endl | std::string()
 #include <stdlib.h>     //int atoi()
-#include <string>       //std::string()
+#include <sys/types.h>  //int socket() | int accept() | int listen() | ssize_t recv() | ssize_t send()
+#include <sys/socket.h> //int socket() | int accept() | int listen() | ssize_t recv() | ssize_t send() | int getnameinfo() 
+#include <netdb.h>      //int getnameinfo()
+#include <netinet/in.h> //struct sockaddr_in
+#include <string.h>     //void *memset()
+#include <arpa/inet.h>  //uni16_t htons() | int inet_pton()
+#include <unistd.h>     //close()
 
 
 int main (int argc, char *argv[]) {
 
     //checking if listening socket port was defined
     if(argc != 2) {
+
         std::cerr << "Something went wrong with the arguments passed to the program!\nRemember to pass the port number for listening socket!" << std::endl;
         return -1;
     }
@@ -30,7 +31,7 @@ int main (int argc, char *argv[]) {
 
     lstnr_addr.sin_family = AF_INET;
     lstnr_addr.sin_port = htons(atoi(argv[1]));
-    lstnr_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    inet_pton(AF_INET, "0.0.0.0", &lstnr_addr.sin_addr); //"0.0.0.0" means ANY
 
     if( bind(listening_socket, reinterpret_cast<sockaddr *>(&lstnr_addr), sizeof(lstnr_addr)) < 0) {
         std::cerr << "Couldn't bind listening socket!" << std::endl;
@@ -39,6 +40,7 @@ int main (int argc, char *argv[]) {
 
     //turning on the listetning mode for the listening socket
     if( listen(listening_socket, SOMAXCONN) < 0 ) {
+        
         std::cerr << "Couldn't listen!" << std::endl;
         return -4;
     }
@@ -86,8 +88,7 @@ int main (int argc, char *argv[]) {
             break;
         }
 
-        std::cout << "Recieved: " << std::string(buffer, bytesRecv);
-
+        std::cout << "Recieved: " << std::string(buffer, bytesRecv) << std::endl;
         send(client_socket, buffer, sizeof(buffer), 0);
     }
 
