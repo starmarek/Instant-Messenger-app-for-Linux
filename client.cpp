@@ -7,10 +7,11 @@
 #include <arpa/inet.h>  //uni16_t htons() | int inet_pton()
 #include <string.h>     //void *memset()
 #include <stdio.h>      //ssize_t getline()
+#include <sys/select.h> //int select()
 
 
 int main (int argc, char *argv[]) {
-
+    
     //checking if appropriete number of arguments was passed to the program
     if (argc != 3) {
 
@@ -18,7 +19,7 @@ int main (int argc, char *argv[]) {
         std::cerr << "Remember to pass the IP addres and port number for a socket!" << std::endl;
         return -1;
     }
-
+    
     //creating socket
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
@@ -41,26 +42,50 @@ int main (int argc, char *argv[]) {
 
     //communication with server
     char buffer[4096];
-    std::string userInput;
+    char userInput[4096];
+    fd_set master;
+   
 
     while(true) {
 
-        std::cout << "> ";
-        getline(std::cin, userInput);
+        FD_ZERO(&master);
+        FD_SET(0, &master);
+        FD_SET(sock, &master);
 
-        int sendResult = send(sock, userInput.c_str(), userInput.size() + 1, 0);
-        if(sendResult < 0) {
-            std::cerr << "Couldn't send! Try again..." << std::endl;
-            continue;
-        }
+        select(sock + 1, &master, nullptr, nullptr, nullptr);
 
-        memset(buffer, 0, sizeof(buffer));
-        int bytesRecv = recv(sock, buffer, sizeof(buffer), 0);
-        if (bytesRecv < 0 ) {
-            std::cerr << "There was an error recieving a response from the server!" << std::endl;
+        if(FD_ISSET(0, &master)) {
+
+        memset(userInput, 0, sizeof(userInput));
+        read(0, userInput, 4096);
+        send(sock, userInput, sizeof(userInput), 0);
+        std::cout << std::endl;
         }
         else {
-            std::cout << "Server> " << std::string(buffer, bytesRecv) << std::endl;
+
+            memset(buffer, 0, sizeof(buffer));
+            int bytesRecv = recv(sock, buffer, sizeof(buffer), 0);
+            if (bytesRecv < 0 ) {
+
+                std::cerr << "There was an error recieving a response from the server!" << std::endl;
+            }
+            else if(bytesRecv == 0) {
+
+                std::cout << "Server went down!\nClosing app..." << std::endl;         
+                return 0;   
+            }
+            else {
+
+                std::cout << std::string(buffer, bytesRecv);
+                if(strncmp(">>", buffer, 2) != 0) {
+
+                    std::cout << std::endl;
+                }
+                else {
+
+                    continue;
+                }
+            }
         }
     }
 
