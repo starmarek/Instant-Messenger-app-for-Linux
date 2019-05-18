@@ -8,6 +8,11 @@
 #include <string.h>     //void *memset()
 #include <stdio.h>      //ssize_t getline()
 #include <sys/select.h> //int select()
+#include <sys/sendfile.h>
+#include <sys/stat.h> 
+#include <fcntl.h>
+
+
 
 
 int main (int argc, char *argv[]) {
@@ -43,6 +48,8 @@ int main (int argc, char *argv[]) {
     //communication with server
     char buffer[4096];
     char userInput[4096];
+    char sendKey[20] = "send";
+    char fileName[100];
     fd_set master;
    
 
@@ -58,6 +65,21 @@ int main (int argc, char *argv[]) {
 
         memset(userInput, 0, sizeof(userInput));
         read(0, userInput, 4096);
+        if(strncmp(sendKey, userInput, 4) == 0) {
+
+            int file;   
+            memset(fileName, 0, sizeof(fileName));
+            memcpy(fileName, &userInput[5], 90);
+            std::cout << fileName << std::flush;
+            std::cout <<  &userInput[5] << std::flush;
+            if((file = open(fileName, O_RDONLY)) == -1) {
+                std::cerr << "Problem opening file!" << std::endl;
+                std::cerr << errno << std::flush;
+                continue;
+            }
+            ssize_t result = sendfile64(sock, file, nullptr, sizeof(file));
+            continue;
+        }
         send(sock, userInput, sizeof(userInput), 0);
         std::cout << std::endl;
         }
