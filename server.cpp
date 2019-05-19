@@ -9,6 +9,10 @@
 #include <unistd.h>     //close()
 #include <sys/select.h> //int select()
 #include <vector>       //std::vector
+#include <fstream>
+#include <sys/stat.h> 
+#include <fcntl.h>
+
 
 
 struct user {
@@ -53,7 +57,7 @@ struct user {
 
                 send(socket, "Server Message: Disconnected from ", 35, 0);
                 send(socket, it->username,  strlen(it->username), 0);
-                send(socket, "\n", 2, 0);                
+                send(socket, "\n\n", 4, 0);                
                 connectedUsers.erase(it);
                 return 0;       
             }
@@ -92,7 +96,7 @@ void welcomeSocket(int listening, std::vector<user> &tab, sockaddr_in &addr, soc
     int newSocket = accept(listening, reinterpret_cast<sockaddr *>(&addr), &len);
     char welcomeMessage[] = "\n\t******* Hello friend! You have connected to the chat server *********\n\n";
     send(newSocket, welcomeMessage, sizeof(welcomeMessage), 0);
-    send(newSocket, "Server Message: Please choose your username: \n", 46, 0);
+    send(newSocket, "Server Message: Please choose your username: \n\n", 48, 0);
     tab.emplace_back(user(newSocket, (char *)"noname"));
 
 }
@@ -106,7 +110,7 @@ void connectEm(user &username, std::vector<user> &tab, int sock) {
             char noBuddyMess[] = "Server Message: There is a connection from ";
             send(sock, noBuddyMess, sizeof(noBuddyMess), 0);
             send(sock, username.username, strlen(username.username), 0);
-            char BuddyMess[] = "Do you accept a connection?\nY/N\n";
+            char BuddyMess[] = "\nDo you accept a connection?\nY/N\n\n";
             send(sock, BuddyMess, sizeof(BuddyMess), 0);
             it->authotizatingCon = username.socket;
             return;
@@ -123,15 +127,16 @@ void boundEm(user &client, std::vector<user> &tab) {
             client.connectedUsers.emplace_back(user(it->socket, it->username));
             send(it->socket, "Server Message: Succesfully connected to ", 41, 0);
             send(it->socket, client.username, strlen(client.username), 0);
-            send(it->socket, "\n", 2, 0);
+            send(it->socket, "\n\n", 4, 0);
             send(client.socket, "Server Message: Succesfully connected to ", 41, 0);
             send(client.socket, it->username, strlen(it->username), 0);
-            send(client.socket, "\n", 2, 0);
+            send(client.socket, "\n\n", 4, 0);
             client.authotizatingCon = 0;
             return;
         }
     }
 }
+
 
 void discAll(char * namee, std::vector<user> &tab, std::vector<user> &tabb) {
 
@@ -162,7 +167,6 @@ void checkSockReq(std::vector<user> &tab, fd_set &set, sockaddr_in &addr, sockle
            
             memset(buffer, 0, sizeof(buffer));
             int bytesRecv = recv(sd, buffer, sizeof(buffer), 0);
-            
             if (bytesRecv == 0) {
                 
                 discAll(it->username, it->connectedUsers, tab);
@@ -175,6 +179,8 @@ void checkSockReq(std::vector<user> &tab, fd_set &set, sockaddr_in &addr, sockle
             }
             else {
 
+                if(strlen(buffer) == 0) break;                
+
                 if(strncmp("connect", buffer, 7) == 0) {
                     
                     memset(userConnectName, 0, sizeof(userConnectName));
@@ -183,17 +189,17 @@ void checkSockReq(std::vector<user> &tab, fd_set &set, sockaddr_in &addr, sockle
                     int resultBudy = findSocket(tab, userConnectName);
                     if(resultBudy < 0){
 
-                        char noBuddyMess[] = "Server Message: There is no such user logged!\n";
+                        char noBuddyMess[] = "Server Message: There is no such user logged!\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                     }
                     else if(resultBudy == sd) {
-                        char noBuddyMess[] = "Server Message: You cant connect to yourself!\n";
+                        char noBuddyMess[] = "Server Message: You cant connect to yourself!\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                     }
                     else {
 
                         connectEm(*it, tab, resultBudy);
-                        char noBuddyMess[] = "Server Message: Request send!\n";
+                        char noBuddyMess[] = "Server Message: Request send!\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                     }
                 }
@@ -205,18 +211,18 @@ void checkSockReq(std::vector<user> &tab, fd_set &set, sockaddr_in &addr, sockle
                     int result = it->diconnectt(userConnectName);
                     if(strncmp(userConnectName, it->username, strlen(userConnectName) - 1) == 0 && strlen(userConnectName) != 0) {
 
-                        char noBuddyMess[] = "Server Message: You cant disconnect from yourself!\n";
+                        char noBuddyMess[] = "Server Message: You cant disconnect from yourself!\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                     }
                     else if(result == -1) {
 
-                        char noBuddyMess[] = "Server Message: There is no such a person!\n";
+                        char noBuddyMess[] = "Server Message: There is no such a person!\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                         continue;
                     }
                     else if(result == -2) {
 
-                        char noBuddyMess[] = "Server Message: You are not connected to anybody!\n";
+                        char noBuddyMess[] = "Server Message: You are not connected to anybody!\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                         continue;
                     }
@@ -227,18 +233,54 @@ void checkSockReq(std::vector<user> &tab, fd_set &set, sockaddr_in &addr, sockle
                         }
                     }
                 }
-                 else if(strncmp("switch", buffer, 6) == 0) {
+                else if(strncmp("sendfiles", buffer, 9) == 0) {
+                   
+                    //amount of files to be sent
+                    memset(buffer, 0, sizeof(buffer));
+                    recv(sd, buffer, sizeof(buffer), 0);
+                    int count = atoi(buffer);
+
+                    for(int i = 0; i < count; ++i) {
+                        
+                        //open file if file name, otherwise it is a skip(couldnt open file on client side) or stop(sending aborted on the client side)
+                        memset(buffer, 0, sizeof(buffer));
+                        recv(sd, buffer, sizeof(buffer), 0);
+                        if(strcmp(buffer, "skip") == 0){
+                            continue;
+                        }
+                        else if (strcmp(buffer, "stop") == 0) {
+                            break;
+                        }
+                        int filee = open(buffer, O_WRONLY | O_CREAT, S_IRWXU);
+
+                        //size of file, for proper fileBuffer alloc; if its empty (size==0) than just close file and continue
+                        memset(buffer, 0, sizeof(buffer));
+                        recv(sd, buffer, sizeof(buffer), 0);
+                        if(atoi(buffer) == 0) {
+                            close(filee);
+                            continue;
+                        }
+                        char *fileBuff = new char[atoi(buffer)-1];
+
+                        //actual file content. After reciev, writing it to file
+                        recv(sd, fileBuff, atoi(buffer), 0);
+                        write(filee, fileBuff, strlen(fileBuff));
+                        close(filee);
+                        delete[] fileBuff;
+                    }
+                }
+                else if(strncmp("switch", buffer, 6) == 0) {
                     memset(userConnectName, 0, sizeof(userConnectName));
                     memcpy(userConnectName, &buffer[7], 40);
                     
                     if(strncmp(userConnectName, it->username, strlen(userConnectName) - 1) == 0 && strlen(userConnectName) != 0) {
 
-                        char noBuddyMess[] = "Server Message: You cant switch to yourself!\n";
+                        char noBuddyMess[] = "Server Message: You cant switch to yourself!\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                         continue;
                     }
                     else if(!it->connectedUsers.size()) {
-                        char noBuddyMess[] = "Server Message: You are not connected to anyone!\n";
+                        char noBuddyMess[] = "Server Message: You are not connected to anyone!\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                         continue;
                     }
@@ -246,12 +288,12 @@ void checkSockReq(std::vector<user> &tab, fd_set &set, sockaddr_in &addr, sockle
                     memcpy(userConnectName, &buffer[7], 40);
                     int result = it->findConected(userConnectName);
                     if(result < 0) {
-                        char noBuddyMess[] = "Server Message: You are not connected to such a person!\n";
+                        char noBuddyMess[] = "Server Message: You are not connected to such a person!\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                     }
                     else{
                         it->actuallySwitched = result;
-                        char noBuddyMess[] = "Server Message: Succesfully switched!\n";
+                        char noBuddyMess[] = "Server Message: Succesfully switched!\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                     }
                 }
@@ -265,7 +307,7 @@ void checkSockReq(std::vector<user> &tab, fd_set &set, sockaddr_in &addr, sockle
                         else {
                             send(it->authotizatingCon, "Server Message: Connection from ", 32, 0);
                             send(it->authotizatingCon, it->username, strlen(it->username), 0);
-                            send(it->authotizatingCon, "refused!\n", 10, 0);
+                            send(it->authotizatingCon, " refused!\n\n", 12, 0);
                             it->authotizatingCon = 0;
                         }
                     }
@@ -274,24 +316,25 @@ void checkSockReq(std::vector<user> &tab, fd_set &set, sockaddr_in &addr, sockle
                         if(strncmp(it->username, "noname", 6) == 0) {
                             memset(it->username, 0, 4096);
                             memcpy(it->username, buffer, strlen(buffer)-1);
-                            send(sd, "Server Message: Name set!\n", 27, 0);   
+                            send(sd, "Server Message: Name set!\n\n", 29, 0);   
                             continue;
                         }
 
-                        char noBuddyMess[] = "Server Message: You are not connected to any person!.\nUse 'connect' keyword, followed by an nickname of your college\n";
+                        char noBuddyMess[] = "Server Message: You are not connected to any person!.\nUse 'connect' keyword, followed by an nickname of your college\n\n";
                         send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                     }
                     else{
 
                         int budyNum = it->actuallySwitched;
                         if(budyNum == 0) {
-                            char noBuddyMess[] = "Server Message: You are not switched to anybody!\n";
+                            char noBuddyMess[] = "Server Message: You are not switched to anybody!\n\n";
                             send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
                         }
                         else {
                             send(budyNum, it->username, strlen(it->username), 0);
                             send(budyNum, " >> ", 4, 0);
                             send(budyNum, buffer, strlen(buffer), 0);
+                            send(budyNum, "\n", 2, 0);
                         }
                     }
                 }
@@ -344,7 +387,7 @@ int main (int argc, char *argv[]) {
     int listening_socket = setupListening(addr, addr_len, atoi(argv[1]));
     if(listening_socket < 0) 
         return listening_socket;
-    
+
     fd_set master;
     std::vector<user> clientsTab;
     int maxSockNum = listening_socket;
