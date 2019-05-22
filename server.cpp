@@ -14,139 +14,209 @@
 #include <fcntl.h>
 
 
+class user {
 
-struct user {
+public:
 
-    char *username;
-    std::vector<user> connectedUsers;
-    int socket;   
-    int actuallySwitched;
-    int  authotizatingCon;
+    char *username;    
+    std::vector<user> connectedUsers; //vector containing all the actual connections
+    int socket;                       //socket desciptor corresponding to this*
+    int actuallySwitched;             //actually switched-to user
+    int authotizatingCon;             //flag deciding wheter this* must make a decision about pending connection
 
+    user(int sockNum,  char *newUser);
 
-    user(int sockNum,  char *newUser) : username(new char[4096]), socket(sockNum) {
-        memset(username, 0, 4096);
-        memcpy(username, newUser, 4096);
+    int findConected(char *userName);  //checking if user with passed username is connected to this*
 
-        actuallySwitched = 0;
-        authotizatingCon = 0;;
-
-    }
-
-    int findConected(char * username) {
-
-        for (std::vector<user>::iterator it = connectedUsers.begin(); it != connectedUsers.end(); ++it) {
-           
-            if(strncmp(username, it->username, strlen(username) - 1) == 0) {
-                return it->socket;
-            }
-        }
-        return -1;
-    }
-
-    int diconnectt(char *usernamen) {
-
-        if(!connectedUsers.size()) {
-            return -2;
-        }
-        for (std::vector<user>::iterator it = connectedUsers.begin(); it != connectedUsers.end(); ++it) {
-            if(strncmp(usernamen, it->username, strlen(usernamen) - 1) == 0   && strlen(usernamen) != 0) {
-                if (actuallySwitched == it->socket) {
-                    actuallySwitched = 0;
-                }
-
-                send(socket, "Server Message: Disconnected from ", 35, 0);
-                send(socket, it->username,  strlen(it->username), 0);
-                send(socket, "\n\n", 4, 0);                
-                connectedUsers.erase(it);
-                return 0;       
-            }
-        }
-        return -1;
-    }
+    int diconnect(char *usernamen);    //disconnecting this*, from the passed user 
 };
 
 
-int findSocket(std::vector<user> &tab,  char *client) {
+ user::user(int sockNum,  char *newUser) : username(new char[4096]), socket(sockNum), actuallySwitched(0), authotizatingCon(0) {
 
-    for (std::vector<user>::iterator it = tab.begin(); it != tab.end(); ++it) {
-       
-        if(strncmp(client, it->username, strlen(client) - 1) == 0  && strlen(client) != 0) {
+    memset(username, 0, 4096);
+    memcpy(username, newUser, 4096);
+ }
+
+
+ int user::findConected(char *userName) {
+
+    for (auto it = connectedUsers.begin(); it != connectedUsers.end(); ++it) {
+        
+        if(strncmp(userName, it->username, strlen(userName) - 1) == 0) 
             return it->socket;
-        }
     }
+    //not found
     return -1;
 }
 
 
+int user::diconnect(char *usernamen) {
+
+    //if user is not connected to any other user, return
+    if(!connectedUsers.size())
+        return -2;
+
+    //iterating through whole vector of connected users
+    for (auto it = connectedUsers.begin(); it != connectedUsers.end(); ++it) {
+
+        //if found match (also exclude empty username passed)
+        if(strncmp(usernamen, it->username, strlen(usernamen) - 1) == 0   && strlen(usernamen) != 0) {
+
+            //if this was actually switched to user, remove switch flag
+            if (actuallySwitched == it->socket)
+                actuallySwitched = 0;
+
+            //informing user from whom he was disconnected from
+            char mess[200];
+            std::string mess2 = "Server Message: Disconnected from ";
+            mess2.append(it->username);
+            mess2.append("\n\n");
+            strcpy(mess, mess2.c_str());
+            send(socket, mess, strlen(mess), 0);
+
+            //removing from vector
+            connectedUsers.erase(it);
+
+            //succes
+            return 0;       
+        }
+    }
+    //user not found in the vector
+    return -1;
+}
+
+
+//returns file descriptor that belongs to the user whose nickname is passed 
+int findSocket(std::vector<user> &tab,  char *client) {
+
+    //for all users connected to the server
+    for (auto it = tab.begin(); it != tab.end(); ++it) {
+        
+        //if there is a match and passed nickname wasn't  empty
+        if(strncmp(client, it->username, strlen(client) - 1) == 0  && strlen(client) != 0) {
+
+            return it->socket;
+        }
+    }
+    //if user was not found
+    return -1;
+}
+
+
+//adding all socket descriptor that are currently connected to the server to the fd_set object
 void addAllSockets(int &maxSock, std::vector<user> &tab, fd_set &set) {
  
-    for (std::vector<user>::iterator it = tab.begin(); it != tab.end(); ++it) {
+    for (auto it = tab.begin(); it != tab.end(); ++it) {
 
         int sockNumb = it->socket;
         FD_SET(sockNumb, &set);
+
+        //if found that socket number is bigger than currently set one -> update
         if(sockNumb > maxSock)
             maxSock = sockNumb;
     }   
 }
 
 
-void welcomeSocket(int listening, std::vector<user> &tab, sockaddr_in &addr, socklen_t &len) {
+//sets the userName after LOGIN keyword. Perform safety checks
+void setUsername(char *name, user &actualUser, std::vector<user> &tab) {
+
+    //copy the login name to buffer
+    char nameBuff[100];
+    memset(nameBuff, 0, sizeof(nameBuff));
+    memcpy(nameBuff, &name[6], strlen(name)); 
+
+    if(strcmp(actualUser.username, "noname") != 0) { //first checks wheter user logged in already
+
+        send(actualUser.socket, "Server Message: You are logged already!\n\n", 42, 0);
+        return;
+    }
+    else if(strlen(nameBuff) == 0) {  //second if the buffer was empty
+
+        send(actualUser.socket, "Server Message: Name is unavaliable!\n\n", 40, 0);
+        return;
+    }
+
+    //checks if the name is already occupied
+    for (auto it = tab.begin(); it != tab.end(); ++it) {
+        
+        if(strncmp(it->username, nameBuff, strlen(it->username)) == 0) {
+
+            send(actualUser.socket, "Server Message: Name is unavaliable!\n\n", 40, 0);
+            return;
+        }
+    }
     
-    int newSocket = accept(listening, reinterpret_cast<sockaddr *>(&addr), &len);
-    char welcomeMessage[] = "\n\t******* Hello friend! You have connected to the chat server *********\n\n";
+    //if everything is OK setting username
+    memset(actualUser.username, 0, strlen(actualUser.username));
+    memcpy(actualUser.username, nameBuff, strlen(nameBuff) - 1); 
+
+    send(actualUser.socket, "Server Message: Successfull login!\n\n", 38, 0);
+    return;
+
+}
+
+
+//perform preliminary opartaions on the brand new socket
+void welcomeSocket(int listening, std::vector<user> &tab) {
+    
+    sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+
+    int newSocket = accept(listening, reinterpret_cast<sockaddr *>(&addr), &addr_len);
+    char welcomeMessage[] = " \n\t******* Hello friend! You have connected to the chat server *********\n\n\t\t\tPlease type 'login *USERNAME*' to login.\n\n";
     send(newSocket, welcomeMessage, sizeof(welcomeMessage), 0);
-    send(newSocket, "Server Message: Please choose your username: \n\n", 48, 0);
+
+    //adding user to the vector of all connections
     tab.emplace_back(user(newSocket, (char *)"noname"));
 
 }
 
 
-void connectEm(user &username, std::vector<user> &tab, int sock) {
+//sends question to the desired user wheter he wants to connect or not
+//then sets its flag of pending authotiaztion to ON
+void setAuthorization(user &actualUser, std::vector<user> &tab, int sock) {
 
-    for (std::vector<user>::iterator it = tab.begin(); it != tab.end(); ++it) {
+    //for all users avaliable
+    for (auto it = tab.begin(); it != tab.end(); ++it) {
         
+        //if there is a match
         if(it->socket == sock) {
-            char noBuddyMess[] = "Server Message: There is a connection from ";
-            send(sock, noBuddyMess, sizeof(noBuddyMess), 0);
-            send(sock, username.username, strlen(username.username), 0);
-            char BuddyMess[] = "\nDo you accept a connection?\nY/N\n\n";
-            send(sock, BuddyMess, sizeof(BuddyMess), 0);
-            it->authotizatingCon = username.socket;
-            return;
-        }
-    }
-}
 
-void boundEm(user &client, std::vector<user> &tab) {
+            //sending question
+            char mess[200];
+            std::string mess2 = "Server Message: There is a connection from ";
+            mess2.append(actualUser.username);
+            mess2.append("\nDo you accept a connection?\nY/N\n\n");
+            strcpy(mess, mess2.c_str());
+            send(sock, mess, strlen(mess), 0);
 
-    for (std::vector<user>::iterator it = tab.begin(); it != tab.end(); ++it) {
-        
-        if(it->socket == client.authotizatingCon) {
-            it->connectedUsers.emplace_back(user(client.socket, client.username));
-            client.connectedUsers.emplace_back(user(it->socket, it->username));
-            send(it->socket, "Server Message: Succesfully connected to ", 41, 0);
-            send(it->socket, client.username, strlen(client.username), 0);
-            send(it->socket, "\n\n", 4, 0);
-            send(client.socket, "Server Message: Succesfully connected to ", 41, 0);
-            send(client.socket, it->username, strlen(it->username), 0);
-            send(client.socket, "\n\n", 4, 0);
-            client.authotizatingCon = 0;
+            //setting flag
+            it->authotizatingCon = actualUser.socket;
             return;
         }
     }
 }
 
 
-void discAll(char * namee, std::vector<user> &tab, std::vector<user> &tabb) {
+//remove every trace of USER that is passed to the function from 'connectedUsers' vector of every other user;
+//it explicitly disconnect all server users from the USER if he was connected to them
+void disconnectAll(char *USERname, std::vector<user> &usertab, std::vector<user> &originaltab) {
 
-    for (std::vector<user>::iterator it = tab.begin(); it != tab.end(); ++it) { //users con to deleting
+    //for all users that the USER was connected to
+    for (auto it = usertab.begin(); it != usertab.end(); ++it) {
         
-        char * name = it->username;
-        for (std::vector<user>::iterator iter = tabb.begin(); iter != tabb.end(); ++iter) { // all users
+        char *name = it->username;
 
+        //for all users in the original, master vector
+        for (std::vector<user>::iterator iter = originaltab.begin(); iter != originaltab.end(); ++iter) {
+
+            //if found this actually iterated user
             if(strncmp(name, iter->username, strlen(name)) == 0) {
-                (*iter).diconnectt(namee);
+
+                //disconnect USER from this user
+                (*iter).diconnect(USERname);
                 break;
             }
         }
@@ -154,198 +224,337 @@ void discAll(char * namee, std::vector<user> &tab, std::vector<user> &tabb) {
 }
 
 
-void checkSockReq(std::vector<user> &tab, fd_set &set, sockaddr_in &addr, socklen_t &len) {
+//closes the connection with socket, which requires some cleanup operations
+auto closeConnection(std::vector<user> &tab, std::vector<user>::iterator &closingObject) {
+
+    sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+
+    //remove this user from the 'connected users' vector of other users it was connected to
+    disconnectAll(closingObject->username, closingObject->connectedUsers, tab);
+
+    //reports to the std::out which user has disconnected
+    getpeername(closingObject->socket, reinterpret_cast<sockaddr *>(&addr), &addr_len);
+    std::cout << closingObject->username << " on " << ntohs(addr.sin_port) << " disconnected!" << std::endl;
+
+    delete[] closingObject->username;
+    close(closingObject->socket);
+
+    //returns the iterator to the following element of erased one
+    return tab.erase(closingObject);
+}
+
+
+//perform operation of connecting users
+//firts perform safety checks, then tries to connect 
+//connection in the sense of this app means adding to the personal vector
+void connectUsers(char *buffer, std::vector<user> &tab, user &actualUser) {
+
+    char userConnectName[50];
+
+    //copying name of user to connect to from buffer
+    memset(userConnectName, 0, sizeof(userConnectName));
+    memcpy(userConnectName, &buffer[8], 40);
+
+    //returns file decriptor corresponding to the requested user
+    int resultBudy = findSocket(tab, userConnectName);
+
+    //this user is not logged into server
+    if(resultBudy < 0){
+
+        char noBuddyMess[] = "Server Message: There is no such user logged!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+    }
+    else if(resultBudy == actualUser.socket) { //if there is a request to connect to himself
+
+        char noBuddyMess[] = "Server Message: You cant connect to yourself!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+    }
+    else if(actualUser.findConected(userConnectName) != -1) { //checking if this user is already connected
+
+        char noBuddyMess[] = "Server Message: You are already connected to this user!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+    }
+    else {  //if everything is all right, we can send an invitation to the desired user
+
+        setAuthorization(actualUser, tab, resultBudy);
+        char noBuddyMess[] = "Server Message: Request send!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+    }
+} 
+
+
+//handles the response from user wheter he wants to connect or not
+//function is called after detecting that 'authorizingCon' flag is set, which means that user is obligated to make a decision
+void finishConnecting(char *buffer, std::vector<user> &tab, user &actualUser) {
+
+    //if user accepted connection
+    if(strncmp("y", buffer, 1) == 0 || strncmp("yes", buffer, 3) == 0 || strncmp("Y", buffer, 1) == 0) {
+       
+       //find the user who started the connection proccess
+        for (auto it = tab.begin(); it != tab.end(); ++it) {
+        
+            if(it->socket == actualUser.authotizatingCon) {
+
+                //add objects to 'connectedUsers' vector of both participants
+                it->connectedUsers.emplace_back(user(actualUser.socket, actualUser.username));
+                actualUser.connectedUsers.emplace_back(user(it->socket, it->username));
+
+                //inform about success of connection
+                char mess[200];
+                memset(mess, 0, sizeof(mess));
+                std::string mess2 = "Server Message: Succesfully connected to ";
+                mess2.append(actualUser.username);
+                mess2.append("\n\n");
+                strcpy(mess, mess2.c_str());
+                send(it->socket, mess, strlen(mess), 0);
+
+                memset(mess, 0, sizeof(mess));
+                mess2 = "Server Message: Succesfully connected to ";
+                mess2.append(it->username);
+                mess2.append("\n\n");
+                strcpy(mess, mess2.c_str());
+                send(actualUser.socket, mess, strlen(mess), 0);
+                
+                break;
+            }
+        }       
+    }
+    else { //otherwise inform user who started the proccess about the failure
+        
+        char mess[200];
+        memset(mess, 0, sizeof(mess));
+        std::string mess2 = "Server Message: Connection from ";
+        mess2.append(actualUser.username);
+        mess2.append(" refused!\n\n");
+        strcpy(mess, mess2.c_str());
+        send(actualUser.authotizatingCon, mess, strlen(mess), 0);
+    }
+
+    //remove flag
+    actualUser.authotizatingCon = 0;
+}
+
+
+//perform disconnecting action along with safety checks
+//removes user object from 'actuallyConnected' vector of both connected togehter users
+void disconnectUsers(char *buffer, std::vector<user> &tab, user &actualUser) {
+
+    //copying information about username to the fooBuff
+    char fooBuff[50];
+    memset(fooBuff, 0, sizeof(fooBuff));
+    memcpy(fooBuff, &buffer[11], 40);
+    
+    //attempt to disconnect from desired user
+    int result = actualUser.diconnect(fooBuff);
+
+    //checks if user want to disconnect from himself
+    if(strncmp(fooBuff, actualUser.username, strlen(fooBuff) - 1) == 0 && strlen(fooBuff) != 0) {
+
+        char noBuddyMess[] = "Server Message: You cant disconnect from yourself!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+        return;
+    }
+    else if(result == -1) { //if didn't find desired person while executing disconect method
+
+        char noBuddyMess[] = "Server Message: There is no such user logged!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+        return;;
+    }
+    else if(result == -2) { //if user is not even connected to anybody so he cant disconnect obviously
+
+        char noBuddyMess[] = "Server Message: You are not connected to anybody!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+        return;
+    }
+
+    //if safety checks went well, it time to disconnect the desired user from the user who started the whole thing in the first place
+    for (auto it = tab.begin(); it != tab.end(); ++it) {
+        
+        if(strncmp(fooBuff, it->username, strlen(fooBuff) - 1) == 0) {
+            it->diconnect(actualUser.username);
+            return;
+        }
+    }
+}
+
+
+//perform switching action along with safety checks
+//changes 'actuallyswitched' flag in the object
+void switchUser(char *buffer, user &actualUser) {
+
+    //copying name of person to switch to
+    char fooBuff[50];
+    memset(fooBuff, 0, sizeof(fooBuff));
+    memcpy(fooBuff, &buffer[7], 40);
+
+    //finding socket of this person
+    int result = actualUser.findConected(fooBuff);
+    
+    //if user want to switch to himself; also prevents empty name buffer
+    if(strncmp(fooBuff, actualUser.username, strlen(fooBuff) - 1) == 0 && strlen(fooBuff) != 0) {
+
+        char noBuddyMess[] = "Server Message: You cant switch to yourself!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+    }
+    else if(!actualUser.connectedUsers.size()) { //if user is not conected to anybody
+
+        char noBuddyMess[] = "Server Message: You are not connected to anyone!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+    }
+    else if(result < 0) {   //if person to switch to is not actually connected to the user
+
+        char noBuddyMess[] = "Server Message: You are not connected to such a person!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+    }
+    else {  //finally perform switching
+
+        actualUser.actuallySwitched = result; //saving the socket of person switched to in the flag
+        char noBuddyMess[] = "Server Message: Succesfully switched!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+    }
+}
+
+
+//recieves file and send it further to the switched to user
+void filesSending(user &actualUser) {
+
+    char buffer[1000];
+    //first informs user that filessending keyword was used, and than from whom the files are coming
+    send(actualUser.actuallySwitched, "sendfiles", 9, 0);
+    usleep(10000);
+    send(actualUser.actuallySwitched, actualUser.username, strlen(actualUser.username), 0);
+
+
+    //amount of files to be sent
+    memset(buffer, 0, sizeof(buffer));
+    recv(actualUser.socket, buffer, sizeof(buffer), 0);
+    send(actualUser.actuallySwitched, buffer, strlen(buffer), 0);
+    int count = atoi(buffer);
+
+    //for all the files
+    for(int i = 0; i < count; ++i) {
+        
+        //file name or skip information or stop keyword
+        //anyway the information is send further. Skip means that file couldnt be open on the client side. Stop means the client aborted sending
+        memset(buffer, 0, sizeof(buffer));
+        recv(actualUser.socket, buffer, sizeof(buffer), 0);
+        send(actualUser.actuallySwitched, buffer, strlen(buffer), 0);
+        if(strcmp(buffer, "skip") == 0)
+            continue;
+        else if (strcmp(buffer, "stop") == 0) 
+            break;
+        
+        //size of file; if its empty just continue without recieving further information
+        memset(buffer, 0, sizeof(buffer));
+        recv(actualUser.socket, buffer, sizeof(buffer), 0);
+        send(actualUser.actuallySwitched, buffer, strlen(buffer), 0);
+        if(atoi(buffer) == 0) {
+            continue;
+        }
+
+        //alloc proper buffer size
+        char *fileBuff = new char[atoi(buffer)-1];
+
+        //actual file content
+        recv(actualUser.socket, fileBuff, atoi(buffer), 0);
+        send(actualUser.actuallySwitched, fileBuff, strlen(fileBuff), 0);
+        delete[] fileBuff;
+    }
+}
+
+
+//sends massage to desired user
+void pushMessFurther(char *buffer, user &actualUser) {
+
+    //check to whom message should be sent
+    int budyNum = actualUser.actuallySwitched;
+
+    if (actualUser.connectedUsers.size() == 0) { //if sender is not connected to anybody
+
+        char noBuddyMess[] = "Server Message: You are not connected to anybody.\nUse 'connect' keyword, followed by an nickname of your college\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+    }
+    else if (budyNum == 0) { //if sender is not switched to anybody
+
+        char noBuddyMess[] = "Server Message: You are not switched to anybody!\n\n";
+        send(actualUser.socket, noBuddyMess, sizeof(noBuddyMess), 0);
+    }
+    else { //finally send the massage
+
+        char mess[200];
+        memset(mess, 0, sizeof(mess));
+        std::string mess2 = actualUser.username;
+        mess2.append(" >>>> ");
+        mess2.append(buffer);
+        mess2.append("\n");
+        strcpy(mess, mess2.c_str());
+        send(budyNum, mess, strlen(mess), 0);    
+    }
+}
+
+
+//detects which of the socket changed its state and interacts with it
+void checkSockReq(std::vector<user> &tab, fd_set &set) {
 
     char buffer[4096];
-    char userConnectName[50];
- 
-    for (std::vector<user>::iterator it = tab.begin(); it != tab.end(); ++it) {
+    
+    //for all users connected to the server
+    for (auto it = tab.begin(); it != tab.end(); ++it) {
         
-        int sd = it->socket;      
+        int socketDescriptor = it->socket;      
 
-        if(FD_ISSET(sd, &set)) {
+        //if this decscriptor is set, get into interaction with it
+        if(FD_ISSET(socketDescriptor, &set)) {
            
+            //reset the buffer and read the incoming information from socket
             memset(buffer, 0, sizeof(buffer));
-            int bytesRecv = recv(sd, buffer, sizeof(buffer), 0);
-            if (bytesRecv == 0) {
-                
-                discAll(it->username, it->connectedUsers, tab);
-                getpeername(sd, reinterpret_cast<sockaddr *>(&addr), &len);
-                std::cout << it->username << " on " << ntohs(addr.sin_port) << " disconnected!" << std::endl;
-                delete[] it->username;
-                close(sd);
-                it = tab.erase(it);
-                if(it == tab.end()) break;
-            }
-            else {
+            int bytesRecv = recv(socketDescriptor, buffer, sizeof(buffer), 0);
+                          
+            if(bytesRecv == 0) { //recieving 0, means that socket closed connection
 
-                if(strlen(buffer) == 0) break;                
+                //if returned iterator points to the end, is important to prevent ++it
+                it = closeConnection(tab, it);
+                if(it == tab.end()) 
+                    break;
+            } 
+            else if(strlen(buffer) == 0) //if information was empty, move on
+                continue;  
 
-                if(strncmp("connect", buffer, 7) == 0) {
-                    
-                    memset(userConnectName, 0, sizeof(userConnectName));
-                    memcpy(userConnectName, &buffer[8], 40);
+            else if(strncmp("login", buffer, 5) == 0) //LOGIN keyword
+                setUsername(buffer, *it, tab);
 
-                    int resultBudy = findSocket(tab, userConnectName);
-                    if(resultBudy < 0){
+            else if(strncmp(it->username, "noname", 6) == 0) //if user is not logged yet
+                send(socketDescriptor, "Server Message: Please log in first!\n\n", 40, 0);   
 
-                        char noBuddyMess[] = "Server Message: There is no such user logged!\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                    }
-                    else if(resultBudy == sd) {
-                        char noBuddyMess[] = "Server Message: You cant connect to yourself!\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                    }
-                    else {
+            else if(it->authotizatingCon) //if users flag of connection authorization is set -> perform further steps towards connecting users
+                finishConnecting(buffer, tab, *it);
 
-                        connectEm(*it, tab, resultBudy);
-                        char noBuddyMess[] = "Server Message: Request send!\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                    }
-                }
-               
-                else if(strncmp("disconnect", buffer, 10) == 0) {
-
-                    memset(userConnectName, 0, sizeof(userConnectName));
-                    memcpy(userConnectName, &buffer[11], 40);
-                    int result = it->diconnectt(userConnectName);
-                    if(strncmp(userConnectName, it->username, strlen(userConnectName) - 1) == 0 && strlen(userConnectName) != 0) {
-
-                        char noBuddyMess[] = "Server Message: You cant disconnect from yourself!\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                    }
-                    else if(result == -1) {
-
-                        char noBuddyMess[] = "Server Message: There is no such a person!\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                        continue;
-                    }
-                    else if(result == -2) {
-
-                        char noBuddyMess[] = "Server Message: You are not connected to anybody!\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                        continue;
-                    }
-                   
-                    for (std::vector<user>::iterator iter = tab.begin(); iter != tab.end(); ++iter) {
-                        if(strncmp(userConnectName, iter->username, strlen(userConnectName) - 1) == 0) {
-                            iter->diconnectt(it->username);
-                        }
-                    }
-                }
-                else if(strncmp("sendfiles", buffer, 9) == 0) {
-                   
-                    //amount of files to be sent
-                    memset(buffer, 0, sizeof(buffer));
-                    recv(sd, buffer, sizeof(buffer), 0);
-                    int count = atoi(buffer);
-
-                    for(int i = 0; i < count; ++i) {
-                        
-                        //open file if file name, otherwise it is a skip(couldnt open file on client side) or stop(sending aborted on the client side)
-                        memset(buffer, 0, sizeof(buffer));
-                        recv(sd, buffer, sizeof(buffer), 0);
-                        if(strcmp(buffer, "skip") == 0){
-                            continue;
-                        }
-                        else if (strcmp(buffer, "stop") == 0) {
-                            break;
-                        }
-                        int filee = open(buffer, O_WRONLY | O_CREAT, S_IRWXU);
-
-                        //size of file, for proper fileBuffer alloc; if its empty (size==0) than just close file and continue
-                        memset(buffer, 0, sizeof(buffer));
-                        recv(sd, buffer, sizeof(buffer), 0);
-                        if(atoi(buffer) == 0) {
-                            close(filee);
-                            continue;
-                        }
-                        char *fileBuff = new char[atoi(buffer)-1];
-
-                        //actual file content. After reciev, writing it to file
-                        recv(sd, fileBuff, atoi(buffer), 0);
-                        write(filee, fileBuff, strlen(fileBuff));
-                        close(filee);
-                        delete[] fileBuff;
-                    }
-                }
-                else if(strncmp("switch", buffer, 6) == 0) {
-                    memset(userConnectName, 0, sizeof(userConnectName));
-                    memcpy(userConnectName, &buffer[7], 40);
-                    
-                    if(strncmp(userConnectName, it->username, strlen(userConnectName) - 1) == 0 && strlen(userConnectName) != 0) {
-
-                        char noBuddyMess[] = "Server Message: You cant switch to yourself!\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                        continue;
-                    }
-                    else if(!it->connectedUsers.size()) {
-                        char noBuddyMess[] = "Server Message: You are not connected to anyone!\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                        continue;
-                    }
-                    memset(userConnectName, 0, sizeof(userConnectName));
-                    memcpy(userConnectName, &buffer[7], 40);
-                    int result = it->findConected(userConnectName);
-                    if(result < 0) {
-                        char noBuddyMess[] = "Server Message: You are not connected to such a person!\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                    }
-                    else{
-                        it->actuallySwitched = result;
-                        char noBuddyMess[] = "Server Message: Succesfully switched!\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                    }
-                }
-                else {
-
-                    if(it->authotizatingCon) {
-
-                        if(strncmp("Y", buffer, 1) == 0) {
-                            boundEm(*it, tab);
-                        }
-                        else {
-                            send(it->authotizatingCon, "Server Message: Connection from ", 32, 0);
-                            send(it->authotizatingCon, it->username, strlen(it->username), 0);
-                            send(it->authotizatingCon, " refused!\n\n", 12, 0);
-                            it->authotizatingCon = 0;
-                        }
-                    }
-                    else if (it->connectedUsers.size() == 0) {
-                        
-                        if(strncmp(it->username, "noname", 6) == 0) {
-                            memset(it->username, 0, 4096);
-                            memcpy(it->username, buffer, strlen(buffer)-1);
-                            send(sd, "Server Message: Name set!\n\n", 29, 0);   
-                            continue;
-                        }
-
-                        char noBuddyMess[] = "Server Message: You are not connected to any person!.\nUse 'connect' keyword, followed by an nickname of your college\n\n";
-                        send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                    }
-                    else{
-
-                        int budyNum = it->actuallySwitched;
-                        if(budyNum == 0) {
-                            char noBuddyMess[] = "Server Message: You are not switched to anybody!\n\n";
-                            send(sd, noBuddyMess, sizeof(noBuddyMess), 0);
-                        }
-                        else {
-                            send(budyNum, it->username, strlen(it->username), 0);
-                            send(budyNum, " >> ", 4, 0);
-                            send(budyNum, buffer, strlen(buffer), 0);
-                            send(budyNum, "\n", 2, 0);
-                        }
-                    }
-                }
-            }
+            else if(strncmp("connect", buffer, 7) == 0) //CONNECT keyword
+                connectUsers(buffer, tab, *it);  
+           
+            else if(strncmp("disconnect", buffer, 10) == 0) //DISCONNECT keyword
+                disconnectUsers(buffer, tab, *it);
+           
+            else if(strncmp("sendfiles", buffer, 9) == 0) //SENDFILES keyword
+                filesSending(*it);
+           
+            else if(strncmp("switch", buffer, 6) == 0) //SWITCH keyword
+                switchUser(buffer, *it);
+           
+            else  //if possible options has ended it must be a massage to the other user
+                pushMessFurther(buffer, *it);
         }   
     }
 }
 
 
-int setupListening(sockaddr_in &addr, socklen_t &len, int port) {
+//sets up the listening socket for the sever
+int setupListening(int port) {
 
+    sockaddr_in addr;
+
+    //creating sokcet
     int listening_socket = socket(AF_INET, SOCK_STREAM, 0);
     if(listening_socket < 0) {
 
@@ -353,18 +562,20 @@ int setupListening(sockaddr_in &addr, socklen_t &len, int port) {
         return -2;
     }
 
+    //setting up properties for socket
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    inet_pton(AF_INET, "0.0.0.0", &addr.sin_addr); //means ANY
+    inet_pton(AF_INET, "0.0.0.0", &addr.sin_addr); //0.0.0.0 means that every IP addres of machine will be listened
 
     if( bind(listening_socket, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+
         std::cerr << "Couldn't bind listening socket!" << std::endl;
         return -3;
     }
 
     //turning on the listetning mode for the listening socket
     if( listen(listening_socket, SOMAXCONN) < 0 ) {
-        
+
         std::cerr << "Couldn't listen!" << std::endl;
         return -4;
     }
@@ -377,43 +588,42 @@ int main (int argc, char *argv[]) {
     //checking if listening socket port was defined
     if(argc != 2) {
 
-        std::cerr << "Something went wrong with the arguments passed to the program!\nRemember to pass the port number for listening socket!" << std::endl;
+        std::cerr << "Usage: portNumber" << std::endl;
         return -1;
     }
 
-    sockaddr_in addr;
-    socklen_t addr_len = sizeof(addr);
-  
-    int listening_socket = setupListening(addr, addr_len, atoi(argv[1]));
+    //if setting up will fail, return
+    int listening_socket = setupListening(atoi(argv[1]));
     if(listening_socket < 0) 
         return listening_socket;
 
-    fd_set master;
-    std::vector<user> clientsTab;
-    int maxSockNum = listening_socket;
+    fd_set master;                      //master set for file desctriptors (socket decsriptors, beeing honest)
+    std::vector<user> clientsTab;       //vector of all users currently connected to server
+    int maxSockNum = listening_socket;  //max file descriptor number for select() function
 
+    //run basically forever
     while(true) {
 
+        //prepering fd_set for select()
         FD_ZERO(&master);
         FD_SET(listening_socket, &master);
         addAllSockets(maxSockNum, clientsTab, master);
         
+        //detects if state of any of the added file descriptors has changed
         int fromSelect = select(maxSockNum+1, &master, nullptr, nullptr, nullptr);
-        if (fromSelect < 0) {
-            
+        if (fromSelect < 0)
             std::cerr << "Selecting went wrong!" << std::endl;
-        }
 
+        //if state of listening socket has changed -> NEW USER COMING!
         if( FD_ISSET(listening_socket, &master) ) {
 
-            welcomeSocket(listening_socket, clientsTab, addr, addr_len);
+            welcomeSocket(listening_socket, clientsTab);
+            
+            //if only one socket was set and it was the listening one, end this iteration
+            if((fromSelect - 1) == 0)
+                continue;
         }
-        else {
-
-            checkSockReq(clientsTab, master, addr, addr_len);
-        }
+        //otherwise it must be some kind of imformation from existing sockets
+        checkSockReq(clientsTab, master);
    }
-    close(listening_socket);
-    std::cin.get();
-    return 0;
-}
+} 
