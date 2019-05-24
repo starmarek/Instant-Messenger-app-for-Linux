@@ -31,5 +31,5 @@ to the server. You can be connected to several users at a time. Beeing connected
 ## Additional functionality
 Program is euqipped in the gtest Unity Tests. You can find them both in the *server* and *client* directory int the *tests* dir. \
 The tests are provided for nearly all of the functions of the program.
-##Credits
+## Credits
 - **Aleksander Pucher** -> all of the code, and program structure as well.
