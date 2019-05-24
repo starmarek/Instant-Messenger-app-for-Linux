@@ -1,6 +1,6 @@
 # Instant-Messenger-app-for-Linux
 Console interface application that allows you to to chat with several buddies at the same time and send files to them as well.
-App uses TCP protocol so as a client you only need to know the IP addres and port of server application.
+App uses TCP protocol and sockets functionality so as a client you only need to know the IP addres and port of server application.
 
 ## How to get started
 Just  `cmake .` and then `make` in client or server directory to get the rdy-to-launch executables.\
