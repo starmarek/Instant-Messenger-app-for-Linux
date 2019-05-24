@@ -18,23 +18,27 @@ std::cout << "- switchedto -> display information about the actually switched-to
 }
 
 
-//erase all files from the queue
-void killQueue(std::vector<char*> &tab) {
+//erase all files from the queue; returns number of files erased
+int killQueue(std::vector<char*> &tab) {
 
+    int counter = 0;
     for(auto it = tab.begin(); it != tab.end(); ++it) {
+        ++counter;
         delete[] *it;
     }
     tab.clear();
     std::cout <<  "\nSuccessfull!\n" << std::endl;
+    
+    return counter;
 }
 
 
 //show status of the queue to the user
-void showQueue(std::vector<char*> &tab) {
+int showQueue(std::vector<char*> &tab) {
 
     if(tab.size() == 0) {
         std::cout << "\nEMPTY!\n" << std::endl;
-        return;
+        return -1;
     }
 
     //enumerate the files
@@ -44,11 +48,13 @@ void showQueue(std::vector<char*> &tab) {
         std::cout << std::endl << ++counter << ". " << *it << std::endl;
     }
     std::cout << std::endl;
+    
+    return 0;
 }
 
 
 //remove a single file from the queue
-void removeFileQueue(std::vector<char *> &tab, char *input) {
+int removeFileQueue(std::vector<char *> &tab, char *input) {
 
     //copy the name of desired file
     char fileName[100];
@@ -56,56 +62,58 @@ void removeFileQueue(std::vector<char *> &tab, char *input) {
     memcpy(fileName, &input[13], 90);
 
     //if file was not specified
-    if (strlen(fileName) == 0){
+    if (strlen(fileName) <= 1){
         std::cout << "\nNo file specified, try again!\n" << std::endl; 
-        return;
+        return -1;
     }
-
     for(auto it = tab.begin(); it != tab.end(); ++it) {
         
         //if the file was found
-        if(strncmp(fileName, *it, strlen(fileName) - 1) == 0) {
+        if(strncmp(fileName, *it, strlen(*it) - 1) == 0) {
            
             delete[] *it;
             tab.erase(it); 
             std::cout <<  "\nSuccessfull!\n" << std::endl;
-            return;
+            return 0;
         }
     }
 
     std::cout <<  "\nThere is no such file, try again!\n" << std::endl;    
+    return -2;
 }
 
 
 //add a file to the queue
-void queueFile(std::vector<char *> &tab, char *input) {
+int queueFile(std::vector<char *> &tab, char *input) {
 
     //copy the file name and crete the file instance
     char fileName[100];
     memset(fileName, 0, sizeof(fileName));
     memcpy(fileName, &input[10], 90);
 
-    if (strlen(fileName) == 0) { //if file name was empty
+    if (strlen(fileName) <= 1) { //if file name was empty
 
         std::cout << "\nNo file specified, try again!\n" << std::endl; 
-        return;
+        return -1;
     }
     char *newFile = new char[100];
     memcpy(newFile, fileName, strlen(fileName) - 1);
-    
+
     //open this file
     int file = open(newFile, O_RDONLY);
 
     if(file == -1) {  //if opening was unsuccessfull 
         
         std::cout << "\nThis file doesn't exist!\n" << std::endl;
-        return;
+        return -2;
     }
 
     //finally, add file to the vector
     tab.push_back(newFile);
     close(file);
     std::cout <<  "\nSuccessfull!\n" << std::endl;
+    
+    return 0;
 }
 
 
@@ -197,7 +205,7 @@ void sendFiles(int socket, std::vector<char*> &tab, char *userInput) {
         }
 
         //finally send file
-        sendfile(socket, file, nullptr, stat_buf.st_size);
+        sendfile(socket, file, nullptr, stat_buf.st_size+1);
     }
     std::cout << "Sending complete!\n" << std::endl;
 }
@@ -247,10 +255,10 @@ void recvFiles(int socket) {
             continue;
         }
         char *fileBuff = new char[atoi(buffer) + 1];
+        memset(fileBuff, 0, atoi(buffer) + 1);
 
         //actual file content. After reciev, writing it to file
         recv(socket, fileBuff, atoi(buffer) + 1, 0);
-
         write(filee, fileBuff, strlen(fileBuff));
         close(filee);
         delete[] fileBuff;

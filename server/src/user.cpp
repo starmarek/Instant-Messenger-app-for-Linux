@@ -5,17 +5,20 @@ char *findSocketByDescriptor(std::vector<user> &tab,  int socket);
 
 
 //first finds the appropriete user using socket, than sends the information to *this
-void user::showSwitched(std::vector<user> &tab) {
+char *user::showSwitched(std::vector<user> &tab) {
 
     //if not switched at all
     if(actuallySwitched == 0) {
         send(socket, "Server Message: Not switched to anyone!\n\n", 43, 0);
-        return;
+        return (char *)"Err";
     }
 
     //finding username of switched-to descriptor. In this position its quite impossible to recieve "Err" message from function because it would 
     //have been detected in the previous 'if' statement
     char *name = findSocketByDescriptor(tab, actuallySwitched);
+    if(strcmp(name, "Err") == 0)
+        return name;
+
     char mess[200];
     std::string mess2;
 
@@ -27,26 +30,28 @@ void user::showSwitched(std::vector<user> &tab) {
     //sending
     strcpy(mess, mess2.c_str());
     send(socket, mess, strlen(mess), 0);
+
+    return name;
 }
 
 
 //prepares the message about connected-to users, and send it to *this
-void user::showConnectedUsers() {
+int user::showConnectedUsers() {
 
     //if not connected to anyone
     if(connectedUsers.size() == 0) {
         send(socket, "Server Message: Not connected to anyone!\n\n", 44, 0);
-        return;
+        return -1;
     }
 
     char mess[200];
     std::string mess2;
-    int counter = 1;
+    int counter = 0;
 
     //collecting informations and preparing message
     for (auto it = connectedUsers.begin(); it !=connectedUsers.end(); ++it) {
 
-        mess2.append(std::to_string(counter++));
+        mess2.append(std::to_string(++counter));
         mess2.append(". ");
         mess2.append(it->username);
         mess2.append("\n");
@@ -55,6 +60,8 @@ void user::showConnectedUsers() {
     mess2.append("\n");
     strcpy(mess, mess2.c_str());
     send(socket, mess, strlen(mess), 0);
+
+    return counter;
 }
 
 
@@ -80,7 +87,7 @@ void user::showConnectedUsers() {
 
 
 //disconnect this* from passed user
-int user::diconnect(char *usernamen) {
+int user::disconnect(char *usernamen) {
 
     //if user is not connected to any other user, return
     if(!connectedUsers.size())

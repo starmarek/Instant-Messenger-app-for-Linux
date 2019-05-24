@@ -35,7 +35,7 @@ void introduceUser(user &actualUser) {
 
 
 //sends massage to switched-to user
-void pushMessFurther(char *buffer, user &actualUser) {
+int pushMessFurther(char *buffer, user &actualUser) {
 
     //check to whom message should be sent
     int budyNum = actualUser.actuallySwitched;
@@ -44,11 +44,13 @@ void pushMessFurther(char *buffer, user &actualUser) {
 
         char mess[] = "Server Message: You are not connected to anybody.\nUse 'connect' keyword, followed by an nickname of your college\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
+        return -1;
     }
     else if (budyNum == 0) { //if sender is not switched to anybody
 
         char mess[] = "Server Message: You are not switched to anybody!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
+        return -2;
     }
     else { //finally send the massage
 
@@ -59,7 +61,8 @@ void pushMessFurther(char *buffer, user &actualUser) {
         mess2.append(buffer);
         mess2.append("\n");
         strcpy(mess, mess2.c_str());
-        send(budyNum, mess, strlen(mess), 0);    
+        send(budyNum, mess, strlen(mess), 0);
+        return 0;
     }
 }
 
@@ -114,6 +117,7 @@ void filesSending(user &actualUser) {
 
         //alloc proper buffer size
         char *fileBuff = new char[atoi(buffer) + 1];
+        memset(fileBuff, 0, atoi(buffer) + 1);
 
         //actual file content
         recv(actualUser.socket, fileBuff, atoi(buffer) + 1, 0);
@@ -125,7 +129,7 @@ void filesSending(user &actualUser) {
 
 //perform switching action along with safety checks
 //changes 'actuallyswitched' flag in the object
-void switchUser(char *buffer, user &actualUser) {
+int switchUser(char *buffer, user &actualUser) {
 
     //copying name of person to switch to
     char fooBuff[50];
@@ -140,29 +144,33 @@ void switchUser(char *buffer, user &actualUser) {
 
         char mess[] = "Server Message: You cant switch to yourself!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
+        return -1;
     }
     else if(!actualUser.connectedUsers.size()) { //if user is not conected to anybody
 
         char mess[] = "Server Message: You are not connected to anyone!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
+        return -2;
     }
     else if(result < 0) {   //if person to switch-to is not actually connected to the user
 
         char mess[] = "Server Message: You are not connected to such a person!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
+        return -3;
     }
     else {  //finally perform switching
 
         actualUser.actuallySwitched = result; //saving the socket of person switched-to in the flag
         char mess[] = "Server Message: Succesfully switched!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
+        return 0;
     }
 }
 
 
 //perform disconnecting action along with safety checks
 //removes user object from 'actuallyConnected' vector of both connected togehter users
-void disconnectUsers(char *buffer, std::vector<user> &tab, user &actualUser) {
+int disconnectUsers(char *buffer, std::vector<user> &tab, user &actualUser) {
 
     //copying information about username to the fooBuff
     char fooBuff[50];
@@ -170,42 +178,44 @@ void disconnectUsers(char *buffer, std::vector<user> &tab, user &actualUser) {
     memcpy(fooBuff, &buffer[11], 40);
     
     //attempt to disconnect from desired user
-    int result = actualUser.diconnect(fooBuff);
+    int result = actualUser.disconnect(fooBuff);
 
     //checks if user want to disconnect from himself
     if(strncmp(fooBuff, actualUser.username, strlen(actualUser.username)) == 0 && strlen(fooBuff) != 0) {
 
         char mess[] = "Server Message: You cant disconnect from yourself!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
-        return;
+        return -1;
     }
     else if(result == -1) { //if didn't find desired person while executing disconect method
 
         char mess[] = "Server Message: There is no such user connected!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
-        return;;
+        return -2;        
     }
     else if(result == -2) { //if user is not even connected to anybody so he cant disconnect obviously
 
         char mess[] = "Server Message: You are not connected to anybody!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
-        return;
+        return -3;        
     }
 
     //if safety checks went well, it time to disconnect the desired user from the user who started the whole thing in the first place
     for (auto it = tab.begin(); it != tab.end(); ++it) {
         
         if(strncmp(fooBuff, it->username, strlen(fooBuff) - 1) == 0) {
-            it->diconnect(actualUser.username);
-            return;
+            it->disconnect(actualUser.username);
+            return 0;
         }
     }
+
+    return -4;
 }
 
 
 //handles the response from user wheter he wants to connect or not
 //function is called after detecting that 'authorizingCon' flag is set, which means that user is obligated to make a decision
-void finishConnecting(char *buffer, std::vector<user> &tab, user &actualUser) {
+int finishConnecting(char *buffer, std::vector<user> &tab, user &actualUser) {
 
     //if user accepted connection
     if(strncmp("y", buffer, 1) == 0 || strncmp("yes", buffer, 3) == 0 || strncmp("Y", buffer, 1) == 0) {
@@ -238,7 +248,7 @@ void finishConnecting(char *buffer, std::vector<user> &tab, user &actualUser) {
                 //remove flag
                 actualUser.authotizatingCon = 0;
 
-                return;
+                return 0;
             }
         }
         //if didnt find user he must have disconnected meanwhile
@@ -257,10 +267,11 @@ void finishConnecting(char *buffer, std::vector<user> &tab, user &actualUser) {
         mess2.append(" refused!\n\n");
         strcpy(mess, mess2.c_str());
         send(actualUser.authotizatingCon, mess, strlen(mess), 0);
-
     }
     //remove flag
     actualUser.authotizatingCon = 0;
+
+    return 1;
 }
 
 
@@ -294,7 +305,7 @@ void setAuthorization(user &actualUser, std::vector<user> &tab, int sock) {
             char mess[200];
             std::string mess2 = "Server Message: There is a connection from ";
             mess2.append(actualUser.username);
-            mess2.append("\nDo you accept a connection?\nY/N\n\n");
+            mess2.append("\nDo you accept a connection?\nY/y/yes // any other to refuse\n\n");
             strcpy(mess, mess2.c_str());
             send(sock, mess, strlen(mess), 0);
 
@@ -309,7 +320,7 @@ void setAuthorization(user &actualUser, std::vector<user> &tab, int sock) {
 //perform operation of connecting users
 //firts perform safety checks, then tries to connect 
 //connection in the sense of this app means adding to the personal vector
-void connectUsers(char *buffer, std::vector<user> &tab, user &actualUser) {
+int connectUsers(char *buffer, std::vector<user> &tab, user &actualUser) {
 
     char userConnectName[50];
 
@@ -325,22 +336,26 @@ void connectUsers(char *buffer, std::vector<user> &tab, user &actualUser) {
 
         char mess[] = "Server Message: There is no such user logged!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
+        return -1;
     }
     else if(resultBudy == actualUser.socket) { //if there is a request to connect to himself
 
         char mess[] = "Server Message: You cant connect to yourself!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
+        return -2;
     }
     else if(actualUser.findConected(userConnectName) != -1) { //checking if this users are already connected
 
         char mess[] = "Server Message: You are already connected to this user!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
+        return -3;
     }
     else {  //if everything is all right, we can send an invitation to the desired user
 
         setAuthorization(actualUser, tab, resultBudy);
         char mess[] = "Server Message: Request send!\n\n";
         send(actualUser.socket, mess, sizeof(mess), 0);
+        return 0;
     }
 } 
 
@@ -361,7 +376,7 @@ void disconnectAll(char *USERname, std::vector<user> &usertab, std::vector<user>
             if(strncmp(name, iter->username, strlen(name)) == 0) {
 
                 //disconnect USER from this user
-                (*iter).diconnect(USERname);
+                (*iter).disconnect(USERname);
                 break;
             }
         }
@@ -420,7 +435,7 @@ char *findSocketByDescriptor(std::vector<user> &tab,  int socket) {
 
 
 //sets the userName after LOGIN keyword. Perform safety checks
-void setUsername(char *name, user &actualUser, std::vector<user> &tab) {
+int setUsername(char *name, user &actualUser, std::vector<user> &tab) {
 
     //copy the login name to buffer
     char nameBuff[100];
@@ -430,12 +445,12 @@ void setUsername(char *name, user &actualUser, std::vector<user> &tab) {
     if(strcmp(actualUser.username, "noname") != 0) { //first checks wheter user logged in already
 
         send(actualUser.socket, "Server Message: You are logged already!\n\n", 42, 0);
-        return;
+        return -1;
     }
-    else if(strlen(nameBuff) == 0) {  //second if the buffer was empty
+    else if(strlen(nameBuff) <= 1) {  //second if the buffer was empty
 
         send(actualUser.socket, "Server Message: Name is unavaliable!\n\n", 40, 0);
-        return;
+        return -2;
     }
 
     //checks if the name is already occupied
@@ -444,7 +459,7 @@ void setUsername(char *name, user &actualUser, std::vector<user> &tab) {
         if(strncmp(it->username, nameBuff, strlen(it->username)) == 0) {
 
             send(actualUser.socket, "Server Message: Name is unavaliable!\n\n", 40, 0);
-            return;
+            return -3;
         }
     }
     
@@ -453,5 +468,5 @@ void setUsername(char *name, user &actualUser, std::vector<user> &tab) {
     memcpy(actualUser.username, nameBuff, strlen(nameBuff) - 1); 
 
     send(actualUser.socket, "Server Message: Successfull login!\n\n", 38, 0);
-    return;
+    return 0;
 }

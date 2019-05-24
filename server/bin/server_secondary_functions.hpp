@@ -13,18 +13,18 @@
 
 void introduceUser(user &actualUser);
 
-void pushMessFurther(char *buffer, user &actualUser);
+int pushMessFurther(char *buffer, user &actualUser);
 
 void filesSending(user &actualUser);
 
-void switchUser(char *buffer, user &actualUser);
+int switchUser(char *buffer, user &actualUser);
 
-void disconnectUsers(char *buffer, std::vector<user> &tab, user &actualUser);
+int disconnectUsers(char *buffer, std::vector<user> &tab, user &actualUser);
 
-void finishConnecting(char *buffer, std::vector<user> &tab, user &actualUser);
+int finishConnecting(char *buffer, std::vector<user> &tab, user &actualUser);
 
-void connectUsers(char *buffer, std::vector<user> &tab, user &actualUser);
+int connectUsers(char *buffer, std::vector<user> &tab, user &actualUser);
 
 std::vector<user>::iterator closeConnection(std::vector<user> &tab, std::vector<user>::iterator &closingObject);
 
-void setUsername(char *name, user &actualUser, std::vector<user> &tab);
+int setUsername(char *name, user &actualUser, std::vector<user> &tab);

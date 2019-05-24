@@ -15,13 +15,13 @@
 #include <stdlib.h>
 
 
-void killQueue(std::vector<char*> &tab);
+int killQueue(std::vector<char*> &tab);
 
-void showQueue(std::vector<char*> &tab);
+int showQueue(std::vector<char*> &tab);
 
-void removeFileQueue(std::vector<char *> &tab, char *input);
+int removeFileQueue(std::vector<char *> &tab, char *input);
 
-void queueFile(std::vector<char *> &tab, char *input);
+int queueFile(std::vector<char *> &tab, char *input);
 
 void sendFiles(int socket, std::vector<char*> &tab, char *userInput);
 
